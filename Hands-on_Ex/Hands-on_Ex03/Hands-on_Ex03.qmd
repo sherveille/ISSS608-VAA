@@ -406,8 +406,7 @@ bp <- globalPop %>%
           text = ~Country, 
           hoverinfo = "text",
           type = 'scatter',
-          mode = 'markers',
-          fill = ~''
+          mode = 'markers'
           )
 bp
 ```
