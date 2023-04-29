@@ -1,4 +1,6 @@
 ---
 title: "In-class Exercise 3"
 author: "Alicia"
+date: "29 April 2023"
+editor: visual
 ---
