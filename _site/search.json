@@ -467,5 +467,12 @@
     "title": "Hands-on Exercise 4",
     "section": "Interactive Funnel Plot: plotly + ggplot2",
     "text": "Interactive Funnel Plot: plotly + ggplot2\n\nfp_ggplotly <- ggplotly(p,\n  tooltip = c(\"label\", \n              \"x\", \n              \"y\"))\nfp_ggplotly"
+  },
+  {
+    "objectID": "In-class_Ex/In-class_Ex04/In-class_Ex04.html",
+    "href": "In-class_Ex/In-class_Ex04/In-class_Ex04.html",
+    "title": "In-class Exercise 4",
+    "section": "",
+    "text": "pacman::p_load(rstatix, gt, patchwork, tidyverse, webshot2, png)\n\n\n\n\n\nexam_data <- read_csv(\"data/Exam_data.csv\")\n\n\n\n\n\nThe plotThe code chunk\n\n\n\n\n\n\n\n\n\n\nggplot(exam_data,\n       aes(sample=ENGLISH)) +\n  stat_qq() +\n  stat_qq_line()\n\n\n\n\n\n\n\n\n\n\nNote\n\n\n\nWe can see that the points deviate significantly from the straight diagonal line. This is a clear indication that the set of data is not normally distributed.\n\n\n\nThe plotThe code chunk\n\n\n\n\n\n\n\n\n\n\nqq <- ggplot(exam_data,\n       aes(sample=ENGLISH)) +\n  stat_qq() +\n  stat_qq_line()\n\nsw_t <- exam_data %>%\n  shapiro_test(ENGLISH) %>%\n  gt()\n\ntmp <- tempfile(fileext = '.png')\ngtsave(sw_t, tmp)\ntable_png <- png::readPNG(tmp,\n                          native = TRUE)\n\nqq + table_png"
   }
 ]
