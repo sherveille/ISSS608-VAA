@@ -114,14 +114,16 @@ f1 <- f %>% group_by(participantId) %>%
     values_from = amount, 
     values_fn = list(amount = sum),
     values_fill = 0
-    )
+    ) %>%
+  ungroup()
 
 #Create new variables, Income and Expense. Convert Expense values to positive. Store as new table f2
 f2 <- f1 %>%
-    group_by(participantId, timestamp) %>% 
-    mutate(Income=sum(Wage, RentAdjustment),
-           Expense=sum(Shelter, Education, Food, Recreation)
-           )
+  group_by(participantId, timestamp) %>%
+  mutate(Income=sum(Wage, RentAdjustment),
+         Expense=sum(Shelter, Education, Food, Recreation)
+         ) %>%
+  ungroup()
 
 f2$Expense <- abs(f2$Expense)
 
@@ -212,7 +214,7 @@ ggplotly(g)
 #| code-summary: "Show the code"
 
 g <- ggplot(data = p,
-       aes(x = fct_inorder(educationLevel))) +
+       aes(x = factor(educationLevel, levels=c("Low", "HighSchoolOrCollege",  "Bachelors", "Graduate")))) +
   geom_bar(color="black", fill="light blue") +
   labs(title = 'Distribution by Education Level',
        x = "Education Level",
@@ -417,7 +419,7 @@ ggplot(data = nt, aes(x = Income, y = age, fill = after_stat(x))) +
 #| code-fold: true
 #| code-summary: "Show the code"
 
-ggplot(data = nt, aes(x = Income, y = educationLevel, fill = after_stat(x))) +
+ggplot(data = nt, aes(x = Income, y = factor(educationLevel, levels=c("Low", "HighSchoolOrCollege",  "Bachelors", "Graduate")), fill = after_stat(x))) +
   
   geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
   
@@ -576,10 +578,10 @@ b <- ggplot(data = nt, aes(y = Income)) +
 income_distri <- b / h + plot_layout(heights = c(1, 4)) 
 
 income_distri + plot_annotation(title = "Distribution of Monthly Income", 
-                               subtitle = "There is a right-skewed distribution i.e. mean monthly income > median monthly income. There is also a large number of outliers (income >$9,115).",
+                               subtitle = "There is a right-skewed distribution i.e. mean monthly income > median monthly income.\n There is also a large number of outliers (income >$9,115).",
                                theme = theme(
                                  plot.title = element_text(size = 16),
-                                 plot.subtitle = element_text(size = 8)))
+                                 plot.subtitle = element_text(size = 10)))
 ```
 
 We can see that the monthly income has a right-skewed distribution. This is a clear indication that the set of data is not normally distributed.
@@ -787,7 +789,7 @@ ggplot(
 #Base ggplot
 ggplot(
   data = nt,
-  aes(x = educationLevel,
+  aes(x = factor(educationLevel, levels=c("Low", "HighSchoolOrCollege",  "Bachelors", "Graduate")),
       y = Income)) +
   
 #Using stat_pointinterval to plot the points and intervals
@@ -825,7 +827,7 @@ ggplot(
 
 -   Bachelors and Graduates have higher uncertainties in the median estimates of the monthly income.
 
-The above findings are consistent with the Hypothetical Outcomes Plots shown below that shows the monthly income range of 100 random samples.
+Visualizing uncertainty of monthly income using Hypothetical Outcomes Plots based on 100 random samples:
 
 ::: panel-tabset
 
@@ -857,7 +859,7 @@ ggplot(data = nt,
 #| code-summary: "Show the code"
 
 ggplot(data = nt, 
-       (aes(x = educationLevel, y = Income))) +
+       (aes(x = factor(educationLevel, levels=c("Low", "HighSchoolOrCollege",  "Bachelors", "Graduate")), y = Income))) +
   geom_point(position = position_jitter(
     height = 0.3, width = 0.05), 
     size = 0.4, color = "#0072B2", alpha = 1/2) +
@@ -872,3 +874,9 @@ ggplot(data = nt,
 ```
 
 :::
+
+#### Insights
+
+-   As noted above, age group 20-30 and 30-40 have higher uncertainties in the median estimates of the monthly income.
+
+-   Bachelors and Graduates have higher uncertainties in the monthly income.
