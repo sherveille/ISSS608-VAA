@@ -266,11 +266,15 @@ ggplotly(g)
 
 #### Insights
 
+-   About 37% of the participants have household size of 2, followed by 33.3% with household size of 1.
+
 -   About 70% of the participants do not have kid.
 
--   The smallest age group belong to seniors age 50-60 (11%).
+-   Teenager 10-20 constitute the smallest age group (7%) while age 40-50 constitute the largest age group (24%).
 
--   About 50% of the participants have up to high school or college education.
+-   About 51% of the participants have up to high school or college education.
+
+-   Interest Group J has the most number of members (11%).
 
 ### 3.1.2 Relationship Between Monthly Income and Other Variables
 
@@ -280,11 +284,11 @@ Boxplots are used to visualize the relationship between monthly income and other
 
 -   A dropdown menu is included to select variables for x-axis while the y-axis is monthly income.
 
--   The x-axis variables that can be selected are namely: householdSize, haveKids, age, educationLevel, and interestGroup. Note that month (timestamp) is treated as discrete variable as we want to find out any seasonal variations (statistically significant difference in mean/median) of price.
+-   The x-axis variables that can be selected are namely: householdSize, haveKids, age, educationLevel, and interestGroup. Note that month (timestamp) is treated as discrete variable as we want to find out any seasonal variations (statistically significant difference in mean/median) of income.
 
 -   Tooltip is used to show mean, quartiles, and outliers.
 
--   The variables are Ordered by ascending order.
+-   The variables are ordered by ascending order.
 
 plot_ly is used to prepare the interactive plot. Steps taken are:
 
@@ -363,7 +367,7 @@ plot_ly(data = nt,
 
 -   The median monthly income increases with household size.
 
--   Households with kids have higher median monthly income.
+-   Households with kids have higher median monthly income (\$4,263).
 
 -   Age group 30-40 has highest median monthly income (\$3,806) while 40-50 has lowest median monthly income (\$3,458).
 
@@ -525,7 +529,7 @@ There is sufficient evidence to conclude that there is a significant linear rela
 
 Correlation between monthly wage and joviality:
 
-There is a significant negative linear relationship between monthly wage and joviality because the p-value (7.38e-195) \< 0.05 and correlation coefficient (-0.284) is significantly different from zero..
+There is sufficient evidence to conclude that there is a significant negative linear relationship between monthly wage and joviality because the p-value (7.38e-195) \< 0.05 and correlation coefficient (-0.284) is significantly different from zero.
 
 ### 3.2.2 Normality Assumption
 
@@ -588,12 +592,12 @@ We can see that the monthly income has a right-skewed distribution. This is a cl
 
 Since we are unable to confirm normality assumption, one-sample Wilcoxon test will be used for hypothesis testing. Note that the null hypothesis is no difference in median monthly income.
 
-To ensure that best practices (APA standard) of statistical reporting is followed, `ggstatsplot` library is used in this section. Median is used instead of mean as point estimates due to high presence of outliers and skewness of data. This will also complement the non-parametric test as well.
+Median is used instead of mean as point estimates due to high presence of outliers and skewness of data. This will also complement the non-parametric test as well.
 
 Perform a one-sample Wilcoxon test to test the null hypothesis:
 
--   H0: the monthly income median is equal to \$3614
--   H1: the monthly income median is different from \$3614
+-   H0: the monthly income median is equal to \$3,614
+-   H1: the monthly income median is different from \$3,614
 
 ```{r}
 #| code-fold: true
@@ -611,7 +615,7 @@ gghistostats(
 
 #### Insights
 
-Based on the results of the test (at the significance level of 0.05), we reject the null hypothesis. There is enough evidence to conclude that the median monthly income is significantly different from \$3614 (p-value = 4.47e-44).
+Based on the results of the test (at the significance level of 0.05), we reject the null hypothesis. There is enough evidence to conclude that the median monthly income is significantly different from \$3,614 (p-value = 4.47e-44).
 
 ### 3.2.3 Difference in Monthly Income by Age Group and Education Level
 
