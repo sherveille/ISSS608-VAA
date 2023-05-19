@@ -1,0 +1,82 @@
+---
+title: "Take-home Exercise 2"
+subtitle: "Visual Analytics to Identify Companies That May Be Engaged in Illegal Fishing"
+author: "Alicia"
+date: "18 May 2023"
+date-modified: "`r Sys.Date()`"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+editor: visual
+
+execute:
+  echo: true
+  eval: true
+  warning: false
+---
+
+# **1. Overview**
+
+This exercise aims to use appropriate static and interactive statistical graphics methods to help FishEye identify companies that may be engaged in illegal fishing.
+
+The original dataset was originated from Mini Challenge 2 of Vast Challenge 2023.
+
+There is one folder and one file downloaded: *bundles* and *mc_challenge_graph.json*. The *bundles* folder contains 12 groups of link suggestions.
+
+# **2. Data Preparation**
+
+## 2.1 Install R packages and import dataset
+
+The code chunk below uses `pacman::p_load()` to check if packages are installed. If they are, they will be launched into R.
+
+```{r}
+#Load packages
+pacman::p_load(jsonlite, igraph, tidygraph, ggraph, 
+               visNetwork, lubridate, clock,
+               tidyverse, graphlayouts)
+```
+
+Import datasets using `fromJSON`.
+
+```{r}
+#Import data
+MC2 <- fromJSON("data/mc2_challenge_graph.json")
+
+carp <- fromJSON("data/bundles/carp.json")
+catfish <- fromJSON("data/bundles/catfish.json")
+chub_mackerel <- fromJSON("data/bundles/chub_mackerel.json")
+cod2 <- fromJSON("data/bundles/cod2.json")
+herring <- fromJSON("data/bundles/herring.json")
+lichen <- fromJSON("data/bundles/lichen.json")
+mackerel <- fromJSON("data/bundles/mackerel.json")
+pollock <- fromJSON("data/bundles/pollock.json")
+salmon <- fromJSON("data/bundles/salmon.json")
+salmon_wgl <- fromJSON("data/bundles/salmon_wgl.json")
+shark <- fromJSON("data/bundles/shark.json")
+tuna <- fromJSON("data/bundles/tuna.json")
+```
+
+## Pull nodes and links out to separate tables
+
+```{r}
+MC2_nodes <- as_tibble(MC2$nodes) %>%
+  select(id, shpcountry, rcvcountry)
+```
+
+```{r}
+MC2_edges <- as_tibble(MC2$links) %>%
+  select(source, target, arrivaldate, hscode, weightkg, valueofgoodsusd)
+```
+
+## 2.2 Data wrangling
+
+Looking at the data below, we notice a few problems as follows:
+
+MC2_nodes:
+-   Missing fields in `shpcountry` and `rcvcountry`.
+-   Weird `id` values e.g. -1143, -6894, etc.
+
+MC2_edges:
+-   Missing fields in `valueofgoodsusd'.
+-   `source` and `target`have weird values e.g. -1992.
