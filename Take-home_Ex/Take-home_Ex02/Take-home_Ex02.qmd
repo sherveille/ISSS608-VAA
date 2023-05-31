@@ -24,6 +24,12 @@ The original dataset was originated from Mini Challenge 2 of Vast Challenge 2023
 
 There is one folder and one file downloaded: *bundles* and *mc_challenge_graph.json*. The *bundles* folder contains 12 groups of link suggestions.
 
+This exercise aims to answer Q1 of the challenge:
+
+-   Use visual analytics to identify temporal patterns for individual entities and between entities in the knowledge graph FishEye created from trade records. Categorize the types of business relationship patterns you find. Limit your response to 600 words and 6 images.
+
+As such, only the *mc_challenge_graph.json* file is used in this exercise.
+
 # **2. Data Preparation**
 
 ## 2.1 Install R packages and import dataset
@@ -34,7 +40,7 @@ The code chunk below uses `pacman::p_load()` to check if packages are installed.
 #Load packages
 pacman::p_load(jsonlite, igraph, tidygraph, ggraph, 
                visNetwork, lubridate, clock,
-               tidyverse, graphlayouts)
+               tidyverse, graphlayouts, extrafont)
 ```
 
 Import datasets using `fromJSON`.
@@ -42,41 +48,1401 @@ Import datasets using `fromJSON`.
 ```{r}
 #Import data
 MC2 <- fromJSON("data/mc2_challenge_graph.json")
-
-carp <- fromJSON("data/bundles/carp.json")
-catfish <- fromJSON("data/bundles/catfish.json")
-chub_mackerel <- fromJSON("data/bundles/chub_mackerel.json")
-cod2 <- fromJSON("data/bundles/cod2.json")
-herring <- fromJSON("data/bundles/herring.json")
-lichen <- fromJSON("data/bundles/lichen.json")
-mackerel <- fromJSON("data/bundles/mackerel.json")
-pollock <- fromJSON("data/bundles/pollock.json")
-salmon <- fromJSON("data/bundles/salmon.json")
-salmon_wgl <- fromJSON("data/bundles/salmon_wgl.json")
-shark <- fromJSON("data/bundles/shark.json")
-tuna <- fromJSON("data/bundles/tuna.json")
 ```
 
-## Pull nodes and links out to separate tables
+## 2.2 Data Wrangling
+
+### 2.2.1 Extracting the nodes and edges
+
+Extract the nodes:
 
 ```{r}
 MC2_nodes <- as_tibble(MC2$nodes) %>%
   select(id, shpcountry, rcvcountry)
+MC2_nodes
 ```
+
+Extract the edges:
+
+-   Convert arrivaldate from `chr` to `Date` format.
+-   Extract year from arrivaldate.
+-   Remove duplicate records, if any.
 
 ```{r}
 MC2_edges <- as_tibble(MC2$links) %>%
-  select(source, target, arrivaldate, hscode, weightkg, valueofgoodsusd)
+  mutate(ArrivalDate = ymd(arrivaldate)) %>%
+  mutate(Year = year(ArrivalDate)) %>%
+  select(source, target, ArrivalDate, Year, hscode,  valueofgoods_omu, 
+         volumeteu, weightkg, valueofgoodsusd) %>% 
+  distinct()
+MC2_edges
 ```
 
-## 2.2 Data wrangling
-
+::: callout-note
 Looking at the data below, we notice a few problems as follows:
 
-MC2_nodes:
--   Missing fields in `shpcountry` and `rcvcountry`.
--   Weird `id` values e.g. -1143, -6894, etc.
+MC2_nodes: - Missing fields in `shpcountry` and `rcvcountry`. - Weird `id`, `shpcountry` and `rcvcountry` values e.g. -1143, -6894, etc.
 
-MC2_edges:
--   Missing fields in `valueofgoodsusd'.
--   `source` and `target`have weird values e.g. -1992.
+MC2_edges: - Missing fields in `valueofgoods_omu`, `volumeteu` and `valueofgoodsusd`. - `source` and `target`have weird values e.g. -1992.
+
+The weird id values still represent the respective companies. As such they are still valid and should be not removed. As for the missing values, we will leave them aside as we will not use these variables.
+:::
+
+### 2.2.2 Preparing edges data table
+
+Reference to Singapore Trade Classification, Customs and Excise Duties 2022 HS code, we filter only those codes that are relevant to fishes, as follows:
+
+-   Chapter 3: Fish and crustaceans, molluscs and other aquatic invertebrates - 0301, 0302, 0303, 0304, 0305, 0306, 0307, 0308, 0309
+
+-   Chapter 15: Animal, vegetable or microbial fats and oils and their cleavage products - 1504
+
+-   Chapter 16: Preparations of meat, of fish, crustaceans, molluscs or other aquatic 73 invertebrates, or of insects - 1603, 1604, 1605
+
+-   Chapter 21: Flours, meals and pellets, of meat or meat offal, of fish or of crustaceans, molluscs or other aquatic invertebrates, unfit for human consumption; greaves - 2301
+
+We also took reference from Connect2india and identified that codes ranging from *300000 - 390000* are related to fishes too. Codes in this range are filtered out and included in the analysis.
+
+hscode is converted from `chr` to `int` format.
+
+Duplicate records are removed, if any.
+
+```{r}
+MC2_edges$hscode <- as.integer(MC2_edges$hscode)
+
+MC2_edges1 <- MC2_edges %>% filter(between(hscode, 030100, 030999))
+MC2_edges2 <- MC2_edges %>% filter(between(hscode, 150400, 150499))
+MC2_edges3 <- MC2_edges %>% filter(between(hscode, 160300, 160599))
+MC2_edges4 <- MC2_edges %>% filter(between(hscode, 230100, 230199))
+MC2_edges5 <- MC2_edges %>% filter(between(hscode, 300000, 390000))
+
+MC2_edges <- rbind(MC2_edges1, MC2_edges2, MC2_edges3, MC2_edges4, MC2_edges5) %>%
+  distinct()
+```
+
+-   Compute weights i.e. no. of times source is linked to target. 
+
+```{r}
+MC2_edges_aggregated <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target) %>%
+#  filter(weights > 20) %>%
+  ungroup() #%>%
+#  arrange(desc(weights)) 
+```
+
+-   Form a new nodes data table for MC2 by using source and target of MC2_edges_aggregated data table. This is to ensure that the nodes in nodes data tables include all the source and target values.
+
+```{r}
+id1 <- MC2_edges_aggregated %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted <- rbind(id1, id2) %>%
+  distinct()
+```
+
+## 3.2 Visualising the network graph
+
+### 3.2.1 Overview: Top 80 Weights Companies
+
+#### Data Preparation
+
+-   Filter MC2_edges_aggregated data table by top 80 weights records.
+
+```{r}
+MC2_edges_aggregated_top80 <- MC2_edges_aggregated %>% 
+  arrange(desc(weights)) %>%
+  head(80)
+MC2_edges_aggregated_top80
+```
+
+-   Preparing nodes data table:
+
+```{r}
+id1 <- MC2_edges_aggregated_top80 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated_top80 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted_top80 <- rbind(id1, id2) %>%
+  distinct()
+```
+
+#### Static Network Graph
+
+```{r}
+MC2_graphtop80 <- tbl_graph(nodes = MC2_nodes_extracted_top80,
+                       edges = MC2_edges_aggregated_top80,
+                       directed = TRUE) 
+
+ggraph(MC2_graphtop80, 
+            layout = "linear", circular = TRUE) +
+  geom_edge_link(aes(width = weights, colour = factor(Year)), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(), 
+                  size = 3) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Top 80 Weights Companies") 
+```
+
+::: callout-Insights
+From MC2 data, the top 3 highest-weight source-\>target are identified as follows:
+
+| No. | Source                           | Target                                              | Year / (weights)                                                        |
+|------------------|------------------|-------------------|------------------|
+| 1   | nián yú Ltd. Corporation         | Niger Bend Limited Liability Company Marine ecology | 2031 / (3471), 2030 / (2979) |
+| 2   | nián yú Ltd. Corporation         | Costa de la Felicidad Shipping                      | 2029 / (2797), 2028 / (2473)                                              |
+| 3   | Sea Breezes S.A. de C.V. Freight | Caracola del Sol Services                           | 2031 / (2708)                                                            |
+:::
+
+#### Interactive Network Graph
+
+-   Exporting Data Objects
+
+```{r}
+write_rds(MC2_nodes_extracted_top80, "data/MC2_nodes_extracted_top80.rds")
+write_rds(MC2_edges_aggregated_top80, "data/MC2_edges_aggregated_top80.rds")
+write_rds(MC2_graphtop80, "data/MC2_graphtop80.rds")
+```
+
+-   Prepare edges tibble data frame
+
+```{r}
+edges_top80_df <- MC2_graphtop80 %>%
+  activate(edges) %>%
+  as_tibble()
+```
+
+-   Prepare nodes tibble data frame
+
+```{r}
+nodes_top80_df <- MC2_graphtop80 %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  rename(label = id) %>%
+  mutate(id=row_number()) %>%
+  select(id, label)
+```
+
+-   Plotting interactive network graph
+
+```{r}
+visNetwork(nodes_top80_df,
+           edges_top80_df) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(arrows = list(to = list(enabled = TRUE, scaleFactor = 3)), 
+           smooth = list(enabled = TRUE, 
+                         type = "curvedCW")) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)  
+```
+
+::: callout-Insights
+There are several interesting observations made on this graph:
+
+-   There are a number of isolated pairs that only work with each other and not anyone else e.g. Playa del Tesoro OJSC (source) -\> Fresh Wharf SRL Consulting (target). This could probably mean that these targets have exclusive rights to the respective sources.
+
+-   Some companies only receive goods and from multiple companies A prominent example is Pao gan SE Seal that receives goods from 6 sources. They could be wholesalers/importers who import goods from other fishing companies/fishermen.
+
+-   Some companies only ship out goods and to multiple companies e.g. nian yu Ltd. Corporation. They could be the wholesalers/exporters who export goods to other wholesalers/importers. They could also be suspicious of illegal fishing, which we will explore in greater details.
+:::
+
+### 3.2.2 Visualization of Centrality Measures by Year
+
+#### Data Preparation
+
+-   Derive new variable, weights, that sums the number of source to target and form new edges data tables by year.
+
+```{r}
+MC2_edges_aggregated2028 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2028") %>%
+#  filter(weights > 20) %>%
+  ungroup() #%>%
+#  arrange(desc(weights)) 
+
+MC2_edges_aggregated2029 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2029") %>%
+  ungroup() 
+
+MC2_edges_aggregated2030 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2030") %>%
+  ungroup() 
+
+MC2_edges_aggregated2031 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2031") %>%
+  ungroup() 
+
+MC2_edges_aggregated2032 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2032") %>%
+  ungroup() 
+
+MC2_edges_aggregated2033 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2033") %>%
+  ungroup() 
+
+MC2_edges_aggregated2034 <- MC2_edges %>%
+  group_by(source, target, hscode, Year) %>%
+    summarise(weights = n()) %>%
+  filter(source!=target, Year == "2034") %>%
+  ungroup() 
+```
+
+-   Form new nodes data table for MC2 by year, by using source and target of MC2_edges_aggregated data table. This is to ensure that the nodes in nodes data tables include all the source and target values.
+
+```{r}
+id1 <- MC2_edges_aggregated2028 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2028 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2028 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2029 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2029 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2029 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2030 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2030 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2030 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2031 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2031 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2031 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2032 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2032 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2032 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2033 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2033 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2033 <- rbind(id1, id2) %>%
+  distinct()
+
+id1 <- MC2_edges_aggregated2034 %>%
+  select(source) %>%
+  rename(id = source)
+id2 <- MC2_edges_aggregated2034 %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted2034 <- rbind(id1, id2) %>%
+  distinct()
+```
+
+-   Building the tidygraph data model
+
+```{r}
+MC2_graph2028 <- tbl_graph(nodes = MC2_nodes_extracted2028,
+                       edges = MC2_edges_aggregated2028,
+                       directed = TRUE) 
+
+MC2_graph2029 <- tbl_graph(nodes = MC2_nodes_extracted2029,
+                       edges = MC2_edges_aggregated2029,
+                       directed = TRUE) 
+
+MC2_graph2030 <- tbl_graph(nodes = MC2_nodes_extracted2030,
+                       edges = MC2_edges_aggregated2030,
+                       directed = TRUE) 
+
+MC2_graph2031 <- tbl_graph(nodes = MC2_nodes_extracted2031,
+                       edges = MC2_edges_aggregated2031,
+                       directed = TRUE) 
+
+MC2_graph2032 <- tbl_graph(nodes = MC2_nodes_extracted2032,
+                       edges = MC2_edges_aggregated2032,
+                       directed = TRUE) 
+
+MC2_graph2033 <- tbl_graph(nodes = MC2_nodes_extracted2033,
+                       edges = MC2_edges_aggregated2033,
+                       directed = TRUE) 
+
+MC2_graph2034 <- tbl_graph(nodes = MC2_nodes_extracted2034,
+                       edges = MC2_edges_aggregated2034,
+                       directed = TRUE) 
+```
+
+-   Compute various centrality measures from the tidygraph data models:
+
+    -   In Degree
+    -   Out Degree
+    -   Eigenvalue
+    -   Betweenness
+    -   In Closeness
+    -   Out Closeness
+
+-   Compute centrality edge betweenness from the edges table.
+
+```{r}
+MC2_graph2028 <- MC2_graph2028 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2028 <- MC2_graph2028 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2029 <- MC2_graph2029 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2029 <- MC2_graph2029 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2030 <- MC2_graph2030 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2030 <- MC2_graph2030 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2031 <- MC2_graph2031 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2031 <- MC2_graph2031 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2032 <- MC2_graph2032 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2032 <- MC2_graph2032 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2033 <- MC2_graph2033 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2033 <- MC2_graph2033 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+
+MC2_graph2034 <- MC2_graph2034 %>% 
+  activate("nodes") %>%
+  mutate(in_degree = centrality_degree(mode = "in")) %>%
+  mutate(out_degree = centrality_degree(mode = "out")) %>%
+  mutate(eigen = centrality_eigen()) %>%
+  mutate(betweenness = centrality_betweenness()) %>%
+  mutate(in_closeness = centrality_closeness(mode = "in")) %>%
+  mutate(out_closeness = centrality_closeness(mode = "out"))
+
+MC2_graph2034 <- MC2_graph2034 %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+```
+
+#### 3.2.2.1   Centrality Degree (In)
+
+-   Due to the large data size, we filter data with in_degree > 20 and community group < 5. Group_component is used to group the nodes.
+
+::: panel-tabset
+## 2028
+
+```{r}
+MC2_graph_indegree2028 <- MC2_graph2028 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2028, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2028")
+
+MC2_graph_indegree2028 %>%
+  as_tibble()
+```
+
+## 2029
+
+```{r}
+MC2_graph_indegree2029 <- MC2_graph2029 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2029, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2029")
+
+MC2_graph_indegree2029 %>%
+  as_tibble()
+```
+
+## 2030
+
+```{r}
+MC2_graph_indegree2030 <- MC2_graph2030 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2030, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2030")
+
+MC2_graph_indegree2030 %>%
+  as_tibble()
+```
+
+## 2031
+
+```{r}
+MC2_graph_indegree2031 <- MC2_graph2031 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2031, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2031")
+
+MC2_graph_indegree2031 %>%
+  as_tibble()
+```
+
+## 2032
+
+```{r}
+MC2_graph_indegree2032 <- MC2_graph2032 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2032, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2032")
+
+MC2_graph_indegree2032 %>%
+  as_tibble()
+```
+
+## 2033
+
+```{r}
+MC2_graph_indegree2033 <- MC2_graph2033 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2033, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2033")
+
+MC2_graph_indegree2033 %>%
+  as_tibble()
+```
+
+## 2034
+
+```{r}
+MC2_graph_indegree2034 <- MC2_graph2034 %>%
+  activate("nodes") %>%
+  arrange(desc(in_degree)) %>%
+  filter(in_degree > 30) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_indegree2034, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = in_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("In-degree Network in 2034")
+
+MC2_graph_indegree2034 %>%
+  as_tibble()
+```
+:::
+
+::: callout-Insights
+The following configurations should be noted before we interpret the graphs:
+-   Node size is set to in-degree
+-   Node colour is set to community group
+-   Edge width is set to weights
+-   Edge colour is set to centrality_edge_betweenness
+
+It is observed that the top 5 companies with highest in-degree in 2028 are:
+
+1. hǎi dǎn Corporation Wharf
+
+2. Mar del Este CJSC
+
+3. Caracola del Sol Services
+
+4. Costa de la Felicidad Shipping
+
+5. Pao gan SE Seal
+
+The top 5 comapnies are consistent across the other years and the respective companies' in-degree values are also quite consistent across the years. No abnormality is observed.
+
+These companies are likely wholesalers/importers who buy/imports fishes from other fishing companies/fishermen.
+
+It is observed that in 2028, Adriatic Tuna Seabass BV Transit has unusually high weights to Olas del Sur Oyj. Also, it distributes fishes out to 7 different companies but do not import any fishes. Other companies that only export fishes include Marine Mates NV Worldwide, Panjan s Marine conservation, Olas del Sur Ltd and David Ltd Liability Co Forwarding. It is also observed that there is high centrality edge betweenness from Selous Game Reserve A/S to Pao gan SE Seal. 
+:::
+
+#### 3.2.2.2   Centrality Degree (Out)
+
+::: panel-tabset
+## 2028
+
+```{r}
+MC2_graph_outdegree2028 <- MC2_graph2028 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 13) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2028, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2028")
+
+MC2_graph_outdegree2028 %>%
+  as_tibble()
+```
+
+## 2029
+
+```{r}
+MC2_graph_outdegree2029 <- MC2_graph2029 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2029, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2029")
+
+MC2_graph_outdegree2029 %>%
+  as_tibble()
+```
+
+## 2030
+
+```{r}
+MC2_graph_outdegree2030 <- MC2_graph2030 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2030, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2030")
+
+MC2_graph_outdegree2030 %>%
+  as_tibble()
+```
+
+## 2031
+
+```{r}
+MC2_graph_outdegree2031 <- MC2_graph2031 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2031, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2031")
+
+MC2_graph_outdegree2031 %>%
+  as_tibble()
+```
+
+## 2032
+
+```{r}
+MC2_graph_outdegree2032 <- MC2_graph2032 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2032, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2032")
+
+MC2_graph_outdegree2032 %>%
+  as_tibble()
+```
+
+## 2033
+
+```{r}
+MC2_graph_outdegree2033 <- MC2_graph2033 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2033, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2033")
+
+MC2_graph_outdegree2033 %>%
+  as_tibble()
+```
+
+## 2034
+
+```{r}
+MC2_graph_outdegree2034 <- MC2_graph2034 %>%
+  activate("nodes") %>%
+  arrange(desc(out_degree)) %>%
+  filter(out_degree > 15) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_outdegree2034, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = out_degree, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Out-degree Network in 2034")
+
+MC2_graph_outdegree2034 %>%
+  as_tibble()
+```
+:::
+
+::: callout-Insights
+The following configurations should be noted before we interpret the graphs:
+-   Node size is set to out-degree
+-   Node colour is set to community group
+-   Edge width is set to weights
+-   Edge colour is set to centrality_edge_betweenness
+
+It is observed that the top 5 companies with highest in-degree in 2028 are:
+
+1. hǎi dǎn Corporation Wharf
+
+2. Mar del Este CJSC
+
+3. Caracola del Sol Services
+
+4. Costa de la Felicidad Shipping
+
+5. Pao gan SE Seal
+
+The top 5 comapnies are consistent across the other years and the respective companies' in-degree values are also quite consistent across the years. No abnormality is observed.
+
+These companies are likely wholesalers/importers who buy/imports fishes from other fishing companies/fishermen.
+:::
+
+#### 3.2.2.3   Centrality Eigen
+
+::: panel-tabset
+## 2028
+
+```{r}
+MC2_graph_eigen2028 <- MC2_graph2028 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2028, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2028")
+
+MC2_graph_eigen2028 %>%
+  as_tibble()
+```
+
+## 2029
+
+```{r}
+MC2_graph_eigen2029 <- MC2_graph2029 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2029, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2029")
+
+MC2_graph_eigen2029 %>%
+  as_tibble()
+```
+
+## 2030
+
+```{r}
+MC2_graph_eigen2030 <- MC2_graph2030 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2030, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2030")
+
+MC2_graph_eigen2030 %>%
+  as_tibble()
+```
+
+## 2031
+
+```{r}
+MC2_graph_eigen2031 <- MC2_graph2031 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2031, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2031")
+
+MC2_graph_eigen2031 %>%
+  as_tibble()
+```
+
+## 2032
+
+```{r}
+MC2_graph_eigen2032 <- MC2_graph2032 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2032, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2032")
+
+MC2_graph_eigen2032 %>%
+  as_tibble()
+```
+
+## 2033
+
+```{r}
+MC2_graph_eigen2033 <- MC2_graph2033 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2033, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2033")
+
+MC2_graph_eigen2033 %>%
+  as_tibble()
+```
+
+## 2034
+
+```{r}
+MC2_graph_eigen2034 <- MC2_graph2034 %>%
+  activate("nodes") %>%
+  arrange(desc(eigen)) %>%
+  filter(eigen > 0.1) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_eigen2034, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = eigen, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Eigen Network in 2034")
+
+MC2_graph_eigen2034 %>%
+  as_tibble()
+```
+:::
+
+#### 3.2.2.4   Centrality Betweenness
+
+::: panel-tabset
+## 2028
+
+```{r}
+MC2_graph_betweenness2028 <- MC2_graph2028 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 250) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2028, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2028")
+
+MC2_graph_betweenness2028 %>%
+  as_tibble()
+```
+
+## 2029
+
+```{r}
+MC2_graph_betweenness2029 <- MC2_graph2029 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 500) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2029, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2029")
+
+MC2_graph_betweenness2029 %>%
+  as_tibble()
+```
+
+## 2030
+
+```{r}
+MC2_graph_betweenness2030 <- MC2_graph2030 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 500) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2030, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2030")
+
+MC2_graph_betweenness2030 %>%
+  as_tibble()
+```
+
+## 2031
+
+```{r}
+MC2_graph_betweenness2031 <- MC2_graph2031 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 700) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2031, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2031")
+
+MC2_graph_betweenness2031 %>%
+  as_tibble()
+```
+
+## 2032
+
+```{r}
+MC2_graph_betweenness2032 <- MC2_graph2032 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 500) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2032, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2032")
+
+MC2_graph_betweenness2032 %>%
+  as_tibble()
+```
+
+## 2033
+
+```{r}
+MC2_graph_betweenness2033 <- MC2_graph2033 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 700) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2033, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2033")
+
+MC2_graph_betweenness2033 %>%
+  as_tibble()
+```
+
+## 2034
+
+```{r}
+MC2_graph_betweenness2034 <- MC2_graph2034 %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness)) %>%
+  filter(betweenness > 500) %>%
+  mutate(group = group_components()) %>%
+  filter(group < 5) 
+
+set.seed(1234)
+ggraph(MC2_graph_betweenness2034, 
+            layout = "fr") +
+  geom_edge_link(aes(width = weights, colour = importance), 
+                 alpha=0.2, arrow = arrow(length = unit(4, 'mm'))) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness, colour = group)) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("Betweenness Network in 2034")
+
+MC2_graph_betweenness2034 %>%
+  as_tibble()
+```
+:::
+
+```{r}
+MC2_edges_aggregated_odtop <- MC2_edges_aggregated %>%
+  filter(source == "Chhattisgarh   Marine ecology A/S Delivery") %>%
+    arrange(Year) %>%
+  rename(group = Year)
+#  select(source, target, Year, weights)
+
+id1 <- MC2_edges_aggregated_odtop %>%
+  select(source) %>%
+  rename(id = source)
+
+id2 <- MC2_edges_aggregated_odtop %>%
+  select(target) %>%
+  rename(id = target)
+MC2_nodes_extracted_odtop <- rbind(id1, id2) %>%
+  distinct()
+
+MC2_graph_odtop <- tbl_graph(nodes = MC2_nodes_extracted_odtop,
+                       edges = MC2_edges_aggregated_odtop,
+                       directed = TRUE) 
+```
+
+#### Interactive Network Graph
+
+-   Exporting Data Objects
+
+```{r}
+write_rds(MC2_nodes_extracted_odtop, "data/MC2_nodes_extracted_odtop.rds")
+write_rds(MC2_edges_aggregated_odtop, "data/MC2_edges_aggregated_odtop.rds")
+write_rds(MC2_graph_odtop, "data/MC2_graph_odtop.rds")
+```
+
+-   Prepare edges tibble data frame
+
+```{r}
+edges_odtop_df <- MC2_graph_odtop %>%
+  activate(edges) %>%
+#  rename(group = Year) %>%
+  as_tibble()
+```
+
+-   Prepare nodes tibble data frame
+
+```{r}
+nodes_odtop_df <- MC2_graph_odtop %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  rename(label = id) %>%
+  mutate(id=row_number()) %>%
+  select(id, label)
+```
+
+-   Plotting interactive network graph
+
+```{r}
+visNetwork(nodes_odtop_df,
+           edges_odtop_df) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(arrows = list(to = list(enabled = TRUE, scaleFactor = 3)), 
+           smooth = list(enabled = TRUE, 
+                         type = "curvedCW")) %>%
+  visGroups(groupname = "2028", color = "red") %>%
+  visGroups(groupname = "2029", color = "lightblue") %>%
+  visGroups(groupname = "2030", color = "green") %>%
+  visGroups(groupname = "2031", color = "purple") %>%
+  visGroups(groupname = "2032", color = "orange") %>%
+  visGroups(groupname = "2033", color = "magenta") %>%
+  visGroups(groupname = "2034", color = "cyan") %>%
+#  visNodes(label = id) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)  
+```
+
+
+::: callout-Insights
+For year 2028:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair has an unusually high weight (1112) as compared to other pairs.
+
+-   The 2nd highest weight pair is OceanicOrigin Foods Co Consulting -\> Panope Limited Liability Company which has 438 weights.
+
+-   This is followed by Gujarat Tide NV Solutions -\> Uttarakhand Market Limited Liability Company Nautical with 434 weights.
+
+For year 2029:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair still tops the weights which is unusually high (1046) as compared to other pairs.
+
+-   The 2nd highest weight pair is Náutica del Sol Brothers -\> Volga River LLC Enterprises which has 404 weights.
+
+-   This is followed by Estrella de la Costa SRL -\> Uttarakhand Market Limited Liability Company Nautical with 395 weights.
+
+For year 2030:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair still tops the weights which is unusually high (1102) as compared to other pairs.
+
+-   The 2nd highest weight pair is OceanicOrigin Foods Co Consulting -\> Panope Limited Liability Company which has unusually high weights (757) as compared to other pairs.
+
+-   This is followed by Oceanfront Oasis Company Green -\> Costa de la Felicidad Shipping with 375 weights.
+
+For year 2031:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair still tops the weights (665).
+
+-   The 2nd highest weight pair is OceanicOrigin Foods Co Consulting -\> Sea Breezes GmbH & Co. KG Shark which has 629 weights.
+
+-   The above 2 source-target pairs have unusually high weights (\>50% higher) as compared to other pairs.
+
+For year 2032:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair still tops the weights (503) but is also not significantly higher as compared to other pairs.
+
+-   The 2nd highest weight pair is Fisherman's Pride Whale A/S Logistics -\> hǎi dǎn Corporation Wharf which has 384 weights.
+
+-   This is followed by OceanicOrigin Foods Co Consulting -\> Coral Cove BV Delivery with 350 weights.
+
+For year 2033:
+
+-   The source-target (Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting) pair still tops the weights (928) but is also not significantly higher as compared to other pairs.
+
+-   The 2nd highest weight pair is Estrella de la Costa SRL -\> Volga River LLC Enterprises which has 916 weights.
+
+-   The above 2 source-target pairs have unusually high weights (\>65% higher) as compared to other pairs.
+
+For year 2034:
+
+-   Different from previous years, the source-target (Estrella de la Costa SRL -\> Volga River LLC Enterprises) pair has the highest weights (982).
+
+-   Playa del Tesoro OJSC -\> Fresh Wharf SRL Consulting fell to the 2nd place with 952 weights.
+
+-   The above 2 source-target pairs have unusually high weights (\>55% higher) as compared to other pairs.
+:::
+
+
+
+
+::: callout-Insights
+For year 2028:
+
+-   hǎi dǎn Corporation Wharf is the top target company with 25 imports followed by Mar del Este CJSC with 22 imports
+
+For year 2029:
+
+-   hǎi dǎn Corporation Wharf is still the top target company with 23 imports followed by Mar del Este CJSC with 19 imports.
+
+For year 2030:
+
+-   Mar del Este CJSC surpasses hǎi dǎn Corporation Wharf to become the top target company with 26 imports followed by hǎi dǎn Corporation Wharf with 20 imports
+
+For year 2031:
+
+-   hǎi dǎn Corporation Wharf and Mar del Este CJSC are both the top target company with 21 imports
+
+For year 2032:
+
+-   hǎi dǎn Corporation Wharf is the top target company with 35 imports followed by Mar del Este CJSC with 28 imports
+
+For year 2033:
+
+-   Mar del Este CJSC surpasses hǎi dǎn Corporation Wharf to become the top target company with 37 imports followed by hǎi dǎn Corporation Wharf with 35 imports.
+
+For year 2034:
+
+-   Mar del Este CJSC continues to be the top target company with 32 imports followed by hǎi dǎn Corporation Wharf with 24 imports.
+
+In general, it is observed that there are multiple importer-\>exporter pairs that work exclusively with each other. In addition, hǎi dǎn Corporation Wharf and Mar del Este CJSC are the top 2 big importers. Neptune's Harvest A/S Hijiki is the top exporter in 2028. However, it disappeared in 2031 and returned in 2032. Estrella de la Costa SRL took over and becomes the top exporter in 2032.
+:::

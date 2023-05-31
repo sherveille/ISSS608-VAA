@@ -19,8 +19,8 @@ execute:
 ```{r}
 pacman::p_load('plotly', 'tidyverse')
 
-require(devtools)
-install_version("ggtern", version = "3.4.1", repos = "http://cran.us.r-project.org")
+#require(devtools)
+#install_version("ggtern", version = "3.4.1", repos = #"http://cran.us.r-project.org")
 
 library(ggtern)
 ```
@@ -40,7 +40,7 @@ pop_data <- read_csv("data/respopagsex2000to2018_tidy.csv")
 #Deriving the young, economy active and old measures
 agpop_mutated <- pop_data %>%
   mutate(`Year` = as.character(Year))%>%
-  spread(AG, Population) %>%
+  pivot_wider(names_from = AG, values_from = Population) %>% #use pivot_wider
   mutate(YOUNG = rowSums(.[4:8]))%>%
   mutate(ACTIVE = rowSums(.[9:16]))  %>%
   mutate(OLD = rowSums(.[17:21])) %>%
@@ -481,6 +481,7 @@ wh <- read_csv("data/WHData-2018.csv")
 ggparcoord(data = wh, 
            columns = c(7:12))
 ```
+
 ### Plotting a parallel coordinates with boxplot
 
 ```{r}
@@ -519,6 +520,7 @@ ggparcoord(data = wh,
   facet_wrap(~ Region) + 
   theme(axis.text.x = element_text(angle = 30))
 ```
+
 ### Adjusting the rotated x-axis text label
 
 ```{r}
@@ -532,6 +534,7 @@ ggparcoord(data = wh,
   facet_wrap(~ Region) + 
   theme(axis.text.x = element_text(angle = 30, hjust=1))
 ```
+
 ## Plotting Interactive Parallel Coordinates Plot: parallelPlot methods
 
 ### The basic plot
@@ -644,7 +647,7 @@ treemap(realis2018_selected,
         )
 ```
 
-### The “value” type treemap
+### The "value" type treemap
 
 ```{r}
 treemap(realis2018_selected,
@@ -658,7 +661,7 @@ treemap(realis2018_selected,
         )
 ```
 
-### The “manual” type treemap
+### The "manual" type treemap
 
 ```{r}
 treemap(realis2018_selected,
@@ -769,10 +772,10 @@ ggplot(data=realis2018_selected,
 ### Installing d3treeR package
 
 ```{r}
-install.packages("devtools")
+#install.packages("devtools")
 
-library(devtools)
-install_github("timelyportfolio/d3treeR")
+#library(devtools)
+#install_github("timelyportfolio/d3treeR")
 
 library(d3treeR)
 ```

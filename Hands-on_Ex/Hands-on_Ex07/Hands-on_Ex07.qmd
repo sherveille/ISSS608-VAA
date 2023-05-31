@@ -1,0 +1,13 @@
+---
+title: "Hands-on Exercise 7"
+author: "Alicia"
+
+date: "18 May 2023"
+date-modified: "`r Sys.Date()`"
+editor: visual
+
+execute:
+  echo: true
+  eval: true
+  warning: false
+---
