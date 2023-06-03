@@ -28,3 +28,7 @@ pacman::p_load(jsonlite, tidygraph, ggraph, tidyverse)
 ```{r}
 mc3_data <- fromJSON("data/MC3.json")
 ```
+
+```{r}
+mc3_edges <- as_tibble(mc3_data)
+```
