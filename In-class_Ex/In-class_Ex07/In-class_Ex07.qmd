@@ -2,12 +2,58 @@
 title: "In-class Exercise 7"
 author: "Alicia"
 
-date: "18 May 2023"
+date: "3 Jun 2023"
 date-modified: "`r Sys.Date()`"
 editor: visual
 
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+    
 execute:
   echo: true
   eval: true
   warning: false
 ---
+
+# Creating a Horizon Graph
+
+## Installing and launching R packages
+
+```{r}
+pacman::p_load(ggthemes, ggHoriPlot, tidyverse) #lubridate is part of tidyverse package
+```
+
+## Data Import
+
+```{r}
+averp <- read_csv("data/AVERP.csv") %>%
+  mutate(`Date` = dmy(`Date`))
+```
+
+## Plotting the horizon graph
+
+```{r}
+averp %>% 
+  filter(Date >= "2018-01-01") %>%
+  ggplot() +
+  geom_horizon(aes(x = Date, y=Values), 
+               origin = "midpoint", 
+               horizonscale = 6)+
+  facet_grid(`Consumer Items`~.) +
+    theme_few() +
+  scale_fill_hcl(palette = 'RdBu') +
+  theme(panel.spacing.y=unit(0, "lines"), strip.text.y = element_text(
+    size = 5, angle = 0, hjust = 0),
+    legend.position = 'none',
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size=7),
+        axis.title.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.border = element_blank()
+    ) +
+    scale_x_date(expand=c(0,0), date_breaks = "3 month", date_labels = "%b%y") +
+  ggtitle('Average Retail Prices of Selected Consumer Items (Jan 2018 to Dec 2022)')
+```
