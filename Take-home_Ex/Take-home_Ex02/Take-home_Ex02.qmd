@@ -196,11 +196,11 @@ The edge width denotes the weights size. The higher the weights, the thicker the
 
 From MC2 data, the top 3 highest-weight source-\>target are identified as follows:
 
-| No. | Source                           | Target                                              | Year / (weights)             |
+| No. | Source                           | Target                                              | Year / (weights)       |
 |------------------|------------------|-------------------|------------------|
 | 1   | nián yú Ltd. Corporation         | Niger Bend Limited Liability Company Marine ecology | 2031: 3471, 2030: 2979 |
 | 2   | nián yú Ltd. Corporation         | Costa de la Felicidad Shipping                      | 2029: 2797, 2028: 2473 |
-| 3   | Sea Breezes S.A. de C.V. Freight | Caracola del Sol Services                           | 2031: 2708                |
+| 3   | Sea Breezes S.A. de C.V. Freight | Caracola del Sol Services                           | 2031: 2708             |
 :::
 
 ## 3.2 Distribution of hscode with top weights by Year
@@ -767,7 +767,7 @@ It is observed that the top 5 companies with highest in-degree in 2028 are:
 
 The top 5 comapnies are consistent across the other years and the respective companies' in-degree values are also quite consistent across the years. No abnormality is observed.
 
-These companies are likely wholesalers/importers who buy/imports fishes from other fishing companies/fishermen.
+These companies are likely wholesalers/importers who buy/import fishes from other fishing companies/fishermen.
 
 It is also observed that there is high centrality edge betweenness between Selous Game Reserve A/S and Pao gan SE Seal in 2028.
 
@@ -1061,9 +1061,9 @@ kable(head(MC2_graph_outdegree2034 %>%
 :::
 
 ::: callout-Insights
-The following configurations should be noted before we interpret the graphs: 
+The following configurations should be noted before we interpret the graphs:
 
-- Node colour denotes the level of out-degree e.g. nodes with \>=150 number of outgoing links are coloured in blue.
+-   Node colour denotes the level of out-degree e.g. nodes with \>=150 number of outgoing links are coloured in blue.
 
 It is observed that the top 5 companies with highest out-degree in 2028 are:
 
@@ -1077,10 +1077,9 @@ It is observed that the top 5 companies with highest out-degree in 2028 are:
 
 5.  bǐ mù yú Sagl Distribution
 
+These companies are likely wholesalers/exporters who sell/export fishes to retailers.
 
-These companies are likely wholesalers/exporters who sell/export fishes to other fishing companies.
-
-Chhattisgarh Marine ecology A/S Delivery remains the top company with highest out-degree in the subsequent years except for 2034 where it is overtaken by Line S.A. de C.V. The graph did not reflect all the outgoing links. This could be due to companies with number of outgoing links <=10 being removed before plotting the graph. 
+Chhattisgarh Marine ecology A/S Delivery remains the top company with highest out-degree in the subsequent years except for 2034 where it is overtaken by Line S.A. de C.V. The graph did not reflect all the outgoing links. This could be due to companies with number of outgoing links \<=10 being removed before plotting the graph.
 
 It is observed that in 2028, Caracola del Este Corporation Express, Zambezi Gorge N.V. Transport, Coral Cove LC Hull and Mar del Norte OJSC are within the top 10 list that only have out-going links and 0 incoming links.
 
@@ -1283,15 +1282,15 @@ kable(head(MC2_graph_eigen2034 %>%
 :::
 
 ::: callout-Insights
-The following configurations should be noted before we interpret the graphs: 
+The following configurations should be noted before we interpret the graphs:
 
-- Node size is set to eigenvector centrality 
+-   Node size is set to eigenvector centrality
 
-- Node colour is set to community group 
+-   Node colour is set to community group
 
-- Edge width is set to weights 
+-   Edge width is set to weights
 
-- Edge colour is set to centrality_edge_betweenness
+-   Edge colour is set to centrality_edge_betweenness
 
 It is observed that the top 4 companies with highest eigenvector centrality from 2028 to 2032 are:
 
@@ -1305,7 +1304,7 @@ It is observed that the top 4 companies with highest eigenvector centrality from
 
 Line S.A. de C.V. came in 3rd in terms of highest eigenvector centrality in 2033 and rose to 2nd highest place in 2034.
 
-The results are consistent with the top 4 companies with highest number of incoming links  yearly.
+The results are consistent with the top 4 companies with highest number of incoming links yearly.
 :::
 
 ### 3.3.4 Centrality Betweenness
@@ -1492,22 +1491,22 @@ kable(head(MC2_graph_betweenness2034 %>%
 :::
 
 ::: callout-Insights
-The following configurations should be noted before we interpret the graphs: 
+The following configurations should be noted before we interpret the graphs:
 
-- Node size is set to betweenness centrality 
+-   Node size is set to betweenness centrality
 
-- Node colour is set to community group 
+-   Node colour is set to community group
 
-- Edge width is set to weights 
+-   Edge width is set to weights
 
-- Edge colour is set to centrality_edge_betweenness
+-   Edge colour is set to centrality_edge_betweenness
 
 It is observed that Selous Game Reserve S.A. de C.V. and Pao gan SE Seal are among the top 10 comanies with the highest betweenness centrality from 2028 to 2031. This means that they have higher control over the network. Selous Game Reserve S.A. de C.V. continues to be in the top 10 list from 2032 to 2034. The company name is suspicious as it has no inference to fishing activities.
 :::
 
-## 3.4 Taking a Closer Look at Zambezi Gorge  N.V. Transport
+## 3.4 Taking a Closer Look at Zambezi Gorge N.V. Transport
 
--   We want to find out the fishing activities of Zambezi Gorge  N.V. Transport as it has one of the highest number of outgoing links but no incoming link.
+-   We want to find out the fishing activities of Zambezi Gorge N.V. Transport as it has one of the highest number of outgoing links but no incoming link.
 
 ::: panel-tabset
 ## 2028
@@ -1737,5 +1736,8 @@ ggraph(MC2_graph_odtop2034,
 
 ::: callout-Insights
 It is observed that Zambezi Gorge N.V. Transport do not send its goods to the same companies every year. It makes the most number of trips i.e. highest weights to Panope Limited Liability Company from 2032 to 2034. It is questionable why it only sends goods and to so many companies.
-
 :::
+
+**4. Conclusion**
+
+In conclusion, there are several actors in the fishing industry, from commercial fishermen to vessel owners to retailers and distributors. Those companies with one-to-one relationship should be having exclusive agreements/distributorship. Those companies with high in-degree are likely wholesalers/importers who buy/import fishes from other fishing companies/fishermen. Those companies with high out-degree are likely wholesalers/exporters who sell/export fishes to retailers. Further investigation of the networks are required to detect specific anomalies.
