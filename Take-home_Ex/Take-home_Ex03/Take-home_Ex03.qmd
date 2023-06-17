@@ -527,7 +527,7 @@ ggraph(mc3_graph_cbcb,
   geom_node_point(aes(size = betweenness_centrality, colour = factor(group1))) + 
   theme_graph() +
   geom_node_text(aes(label = id), size = 1, repel=TRUE) +
-  ggtitle("<span style='font-size: 15pt;'>Betweenness Centrality Network (Company-Beneficial Owner)</font>") +
+  ggtitle("<span style='font-size: 14pt;'>Betweenness Centrality Network (Company-Beneficial Owner)</font>") +
   theme(plot.title = element_markdown())
 
 kable(head(mc3_graph_cbcb %>%
