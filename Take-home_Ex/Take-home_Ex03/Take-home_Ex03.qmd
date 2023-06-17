@@ -23,7 +23,7 @@ This exercise aims to use appropriate static and interactive statistical graphic
 
 The original dataset was originated from Mini Challenge 3 of Vast Challenge 2023.
 
-There is one file downloaded: *MC3.json*. 
+There is one file downloaded: *MC3.json*.
 
 This exercise aims to answer Q1 of the challenge:
 
@@ -38,7 +38,7 @@ The code chunk below will be used to install and load the necessary R packages t
 ```{r}
 pacman::p_load(jsonlite, tidygraph, ggraph, 
                visNetwork, graphlayouts, ggforce, 
-               skimr, tidytext, tidyverse, extrafont)
+               skimr, tidytext, tidyverse, extrafont, knitr, ggtext)
 ```
 
 ## 2.2 Importing json file by using jsonlite package
@@ -97,12 +97,13 @@ In the code chunk below, datatable() of DT package is used to display mc3_edges 
 DT::datatable(mc3_edges)
 ```
 
-A plot below shows the distribution of variable type.
+A plot below shows the distribution of variable type in the mc3_edges data table. This variable only consists of Beneficial Owner and Company Contacts. There are much more Beneficial Owners than Company Contacts.
 
 ```{r}
 ggplot(data = mc3_edges,
        aes(x = type)) +
-  geom_bar()
+  geom_bar() +
+  labs(title = "Distribution of type in mc3_edges data table")
 ```
 
 ## 3.2 Initial Network Visualisation and Analysis
@@ -136,7 +137,8 @@ ggraph(layout = "fr") +
     colors = "lightblue",
     alpha = 0.5)) +
   scale_size_continuous(range=c(1,10))+
-  theme_graph()
+  theme_graph() +
+  labs(title = "Network model of mc3 data")
 ```
 
 ## 3.3 Exploring the nodes data frame
@@ -155,12 +157,13 @@ In the code chunk below, datatable() of DT package is used to display mc3_nodes 
 DT::datatable(mc3_nodes)
 ```
 
-A plot below shows the distribution of variable type.
+A plot below shows the distribution of variable type in the mc3_nodes data table. This variable consists of Beneficial Owner, Company and Company Contacts. There are more Beneficial Owners than Companies than Company Contacts.
 
 ```{r}
 ggplot(data = mc3_nodes,
        aes(x = type)) +
-  geom_bar()
+  geom_bar() +
+  labs(title = "Distribution of type in mc3_nodes data table")
 ```
 
 ## 3.4 Text Sensing with tidytext
@@ -169,10 +172,30 @@ This section performs basic text sensing using appropriate functions of tidytext
 
 ### 3.4.1 Simple word count
 
+This code counts the number of words related to fishing e.g. "fish", "fishes", "seafood", "fishing", etc. in the product_services column. Before that, we make the characters in product_services all lower case for ease of searching.
+
 ```{r}
-mc3_nodes %>% 
-    mutate(n_fish = str_count(product_services, "fish")) 
+mc3_nodes <- mc3_nodes %>% 
+    mutate_at(.vars = vars(product_services), 
+          .funs = funs(tolower)) 
+
+mc3_nodesfish <- mc3_nodes %>% 
+    mutate(n_fish = str_count(product_services, "fish|fishes|seafood|fishing|food|salmon|tuna|sea|seafoods")) 
 ```
+
+A plot of the distribution of nodes with fishing related descriptions in their product services is shown below.
+
+```{r}
+ggplot(data = mc3_nodesfish,
+       aes(x = n_fish)) +
+  geom_bar() + 
+  coord_cartesian(xlim =c(0, 25)) +
+  labs(title = "Distribution of ids related to fishing activities", x = "Number of fishing related words", y = "Number of ids")
+```
+
+::: callout-Insights
+It is observed that majority of the nodes are not related to fishing activities.
+:::
 
 ### 3.4.2 Tokenisation
 
@@ -204,7 +227,7 @@ token_nodes %>%
       title = "Count of unique words found in product_services field")
 ```
 
-The bar chart reveals that the unique words contains some words that may not be useful to use e.g. “and” and “of”. We want to remove these words from your analysis as they are fillers used to compose a sentence.
+The bar chart reveals that the unique words contains some words that may not be useful to use e.g. "and" and "of". We want to remove these words from your analysis as they are fillers used to compose a sentence.
 
 ### 3.4.3 Removing stopwords
 
@@ -227,19 +250,637 @@ stopwords_removed %>%
       title = "Count of unique words found in product_services field")
 ```
 
-### 3.4.4 Recode words "character", "0", and "unknown" in product_services field to NA 
+### 3.4.4 Recode words "character", "0", and "unknown" in product_services field to NA
 
-To make the data more clean and meaningful, we recode the words "character", "0", and "unknown" in product_services field to NA.
+To make the data more clean and meaningful, we recode the words "character", "0", "unknown" and "related" in product_services field to NA. It is also found that there are words "characters" and characterization". These are recoded to NA as well.
 
 ```{r}
-stopwords_removed$word[grepl("character|characters|characterization|0|unknown", stopwords_removed$word)]<-"NA"
+stopwords_removed$word[grepl("character|characters|characterization|0|unknown|related", stopwords_removed$word)]<-"NA"
 ```
 
-### 3.4.5 Identify source-type and target-type
+# **4. Identify anomalies in the business groups**
 
-#```{r}
-#mc3_edges %>% 
-#left_join(mc3_nodes,
-#            unmatched = "drop")
-#```
-  
+## 4.1 Data preparation
+
+### 4.1.1 Unlist source column of mc3_edges data table
+
+We observed there are lists in the source column of mc3_edges data table. To clean up the list, we first segregate out rows with lists from the mc3_edges data table into a separate mc3_edges_wlist data table.
+
+```{r}
+mc3_edges_nolist <- mc3_edges %>% 
+  filter(!grepl('c(', source, fixed = TRUE))
+
+mc3_edges_wlist <- mc3_edges %>% 
+  filter(grepl('c(', source, fixed = TRUE))
+```
+
+As the source column is in chr format, we unlist the lists in source column of mc3_edges_wlist data table by removing characters "c(" and ")" and split the elements by "," using str R package. Then, we remove any duplicate names using lapply. Next, we use the unnest_longer function to separate the elements into new rows.
+
+```{r}
+mc3_edges_wlist$source <- str_replace_all(mc3_edges_wlist$source, "c\\(|\\)|\"", "") 
+
+mc3_edges_wlist$source <- str_split(mc3_edges_wlist$source, ", ") 
+
+mc3_edges_wlist$source <- lapply(mc3_edges_wlist$source, unique)
+
+mc3_edges_wlist <- mc3_edges_wlist %>%
+  unnest_longer(source) %>%
+  distinct()
+```
+
+Lastly, we merge back the rows with the original mc3_edges data table (less the list) to form the cleaned edges data table.
+
+```{r}
+mc3_edges_cleaned <- rbind(mc3_edges_nolist, mc3_edges_wlist) %>%
+  distinct()
+```
+
+### 4.1.2 Create new mc3_nodes data table
+
+Now that we have a cleaned mc3 edges data table, we will use this to create a new nodes data table to ensure all sources and targets are captured in the nodes data table to facilitate accurate development and analysis of network graphs later.
+
+We want to extract the source and target from the mc3_edges_cleaned data table and left join stopwords_removed nodes data table to form the new nodes table.
+
+We first take a look at the stopwords_removed nodes data table. We observed there are duplicate ids, some of which having same id but different country. We want to combine those duplicate ids to remove duplication. This can be done by grouping by id and type and using the summarise function to concatenate the country and word. For revenue_omu, we take the median value as taking the sum may not be comparative to other single id nodes. Then, we use str_split function to split the characters by " , " and then use lapply to ensure no duplicates in each field of `country` column.
+
+```{r}
+mc3_nodesclean <- stopwords_removed %>%
+  group_by(id, type) %>%
+  summarise(country = paste(country, collapse = " , "), revenue_omu = median(revenue_omu), word = paste(word, collapse = " , ")) %>%
+  ungroup()
+
+mc3_nodesclean$country <- str_split(mc3_nodesclean$country, " , ") 
+mc3_nodesclean$country <- lapply(mc3_nodesclean$country, unique)
+
+mc3_nodesclean <- mc3_nodesclean %>%
+  select(id, country, revenue_omu, word)
+```
+
+Then, we look at the mc3_nodes_cleaned data table. We observed that the `source` in mc3_nodes_cleaned data table are all companies while the `target` are people's names, which are aligned to `type` that comprises Beneficial Owner and Company Contacts. As such, we can safely assume that `type` belongs to `target`.
+
+We extract the `source` (and create a new column `type` and name it as "Company") and also extract `target` from the mc3_edges_cleaned data table and left join mc3_nodesclean data table to form the new nodes table.
+
+```{r}
+id3 <- mc3_edges_cleaned %>%
+  select(source) %>%
+  rename(id = source) %>%
+  mutate(type = "Company")
+
+id4 <- mc3_edges_cleaned %>%
+  select(target, type) %>%
+  rename(id = target)
+
+mc3_nodes_cleaned <- rbind(id3, id4) %>%
+  distinct() %>%
+  left_join(mc3_nodesclean, by=c("id" = "id"),
+            unmatched = "drop")  
+
+mc3_graphcleaned <- tbl_graph(nodes = mc3_nodes_cleaned,
+                       edges = mc3_edges_cleaned,
+                       directed = FALSE) %>%
+  mutate(betweenness_centrality = centrality_betweenness(),
+         closeness_centrality = centrality_closeness())
+```
+
+We are now ready to analyse the following relationships:
+
+-   Company (source) and Beneficial Owner (target)
+
+-   Company (source) and Company Contacts (target)
+
+## 4.2 Visualization of distribution of Company ownership by Beneficial Owner
+
+We want to check the frequency distribution of Company ownership by Beneficial Owner.
+
+First, select edges where source type = Company and target type = Beneficial Owner. Count number of duplicated target i.e. Beneficial Owner to find out how many companies are owned by the Beneficial Owner. Then plot the distribution.
+
+```{r}
+mc3_edges_cb <- mc3_edges_cleaned %>%
+  filter(type == "Beneficial Owner") %>%
+    add_count(target) #This adds a column (n) to the table indicating the number of companies linked to the target. 
+
+ggplot(data = mc3_edges_cb,
+       aes(x = n)) +
+  geom_bar() +
+  labs(title = "Distribution of Number of Companies Owned by Beneficial Owner", x = "Number of Companies Owned", y = "Number of Beneficial Owners")
+
+kable(head(mc3_edges_cb %>%
+        arrange(desc(n)) %>%
+  as_tibble(), 10))
+```
+
+::: callout-Insights
+It is observed that majority of the Beneficial Owners own only 1 company, which is normal. However, a minority of them own more than 4 companies. For example, John Smith owns the most companies (11). This is rather suspicious and should be investigated further.
+:::
+
+## 4.3 Visualization of relationship between Company and Beneficial Owner using network graph
+
+### 4.3.1 Analysis of Beneficial Owners with more than 4 companies
+
+First, we form new nodes data table by using source and target of the edges data table. This is to ensure that the nodes in nodes data tables include all the source and target values. Group_component \<10 is used to identify the prominent communities.
+
+```{r}
+mc3_edges_cb4 <- mc3_edges_cb %>%
+  filter(n>4)
+
+id7 <- mc3_edges_cb4 %>%
+  select(source) %>%
+  rename(id = source)
+id8 <- mc3_edges_cb4 %>%
+  select(target) %>%
+  rename(id = target)
+mc3_nodes_cb4 <- rbind(id7, id8) %>%
+  distinct() %>%
+  left_join(mc3_nodes_cleaned, by=c("id" = "id"),
+            unmatched = "drop") %>%
+  filter(type %in% c("Company", "Beneficial Owner"))
+
+mc3_graph_cb4 <- tbl_graph(nodes = mc3_nodes_cb4,
+                       edges = mc3_edges_cb4,
+                       directed = FALSE) 
+
+mc3_graph_cb4 <- mc3_graph_cb4 %>%
+  activate("nodes") %>%
+  mutate(group = group_components()) %>%
+  filter(group < 10) 
+
+edges_cb4_df <- mc3_graph_cb4 %>%
+  activate(edges) %>%
+  as_tibble()
+
+nodes_cb4_df <- mc3_graph_cb4 %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  rename(label = id) %>%
+  mutate(id=row_number()) %>%
+  select(id, label, group)
+```
+
+```{r}
+visNetwork(nodes_cb4_df,
+           edges_cb4_df) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(smooth = list(enabled = TRUE, 
+                         type = "curvedCW")) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+::: callout-Insights
+From the above graph, we can see that John Smith owns 11 companies. We extract info of the companies owned by John Smith and can only ascertain that one of them (Adams Group) is related to fishing activities. Beachcombers Nautical Plc Carriers is into products, mail, houses activities and it has an exceptionally high revenue_omu of 9891666.673. The rest has no info.
+
+```{r}
+mc3_nodes_cb4 %>%
+  filter(id %in% c("Adams Group", "Faroe Islands Company World", "Guzman-Chang", "Peterson PLC", "Ryan-Curry", "The Salted Pearl Inc Pelican", "hǎi zhé Herring Incorporated Logistics", "Beachcombers Nautical Plc Carriers", "SeaSplash Foods Corporation Freight", "Kerala Market Oyj Freight", "Oka S.A. de C.V."))
+```
+
+The 2nd Beneficial Owner who owns most companies (9) is Michael Johnson. We extract info of the companies owned by him and can only ascertain that of the 9 companies, only one of them (Baker and Sons) is related to fishing activities and which has significantly high revenue_omu of 104095830. SeaBass Leska N.V. International is in milling business. The rest has no info.
+
+```{r}
+mc3_nodes_cb4 %>%
+  filter(id %in% c("Baker and Sons", "Chen, Jones and Davis", "Hancock Inc", "Jones, Kennedy and Johnson", "Knight-Brown", "Miller, Wiggins and Smith", "SeaBass  Leska N.V. International", "Seashell Seekers ОАО International", "Thompson LLC"))
+```
+
+The 3rd Beneficial Owner who owns most companies (8) is Jennifer Smith. We extract info of the companies owned by her and observed that of the 8 companies, only Mar del Oeste - and Dutch Mussels S.p.A. Sea spray are related to fishing activities. Luangwa River Limited Liability Company Holdings is in chemicals business while Mar de Cristal ОАО is in dairy product business. The rest has no info.
+
+```{r}
+mc3_nodes_cb4 %>%
+  filter(id %in% c("Cortez Group", "Hamilton LLC", "Luangwa River   Limited Liability Company Holdings", "Mar de Coral GmbH and Son's", "Mar de Cristal ОАО", "Mar del Oeste -", "Dutch Mussels S.p.A. Sea spray", "Maacama  S.p.A. Marine ecology"))
+```
+
+Next, we observed a rather large community where 3 companies seem to be of high betweenness centrality. They are namely:
+
+-   BlueTide GmbH & Co. KG - in fabrication and metal products business
+
+-   West Fish GmbH Transport - in veneer and wood business
+
+-   Mar del Oeste - - in legit fishing business
+
+These 3 companies are all owned by Jessica Brown, who owned a total of 5 companies. BlueTide GmbH & Co. KG is owned by David Thomas, Mar del Oeste is owned by Jennifer Smith and West Fish GmbH Transport is owned by Michael Miller. We will investigate further in below section when we examine the betweenness centrality between Company and Beneficial Owners.
+
+```{r}
+mc3_nodes_cb4 %>%
+  filter(id %in% c("BlueTide GmbH & Co. KG", "West Fish  GmbH Transport", "Mar del Oeste -"))
+```
+:::
+
+### 4.3.2 Analysis of betweenness centrality between Company and Beneficial Owner (tidygraph)
+
+Centrality Betweenness is a way of detecting the amount of influence a node has over the flow of information in a graph. It finds nodes that serve as a bridge from one part of a graph to another and measures the shortest paths between all pairs of nodes in a graph. A node with higher betweenness centrality would have more control over the network.
+
+First, we form new nodes data table by using source and target of the edges data table. This is to ensure that the nodes in nodes data tables include all the source and target values.
+
+```{r}
+id5 <- mc3_edges_cb %>%
+  select(source) %>%
+  rename(id = source)
+id6 <- mc3_edges_cb %>%
+  select(target) %>%
+  rename(id = target)
+mc3_nodes_cb <- rbind(id5, id6) %>%
+  distinct() %>%
+  left_join(mc3_nodes_cleaned, by=c("id" = "id"),
+            unmatched = "drop") %>%
+  filter(type %in% c("Company", "Beneficial Owner"))
+
+mc3_graph_cb <- tbl_graph(nodes = mc3_nodes_cb,
+                       edges = mc3_edges_cb,
+                       directed = FALSE) %>%
+  mutate(betweenness_centrality = centrality_betweenness(),
+         closeness_centrality = centrality_closeness())
+```
+
+We bin the betweenness centrality of the nodes for ease of visualization using VisNetwork later.
+
+Due to the large data size, we filter data with betweenness \> 500000 and community group \< 10. Group_component is used to identify the prominent communities.
+
+```{r}
+mc3_graph_cbcb <- mc3_graph_cb %>%
+  activate("nodes") %>%
+  mutate(group = cut(betweenness_centrality, breaks = c(0, 1000000, 2000000, 3000000, Inf),
+                       labels = c("1\n(0-999999)", 
+                                  "2\n(1000000-1999999)", 
+                                  "3\n(2000000-2999999)",
+                                  "4\n(>=3000000)\n"),  
+                       include.lowest = TRUE)) %>%
+  arrange(desc(betweenness_centrality)) %>%
+  filter(betweenness_centrality > 500000) %>%
+  mutate(group1 = group_components()) %>%
+  filter(group1 < 10) 
+
+mc3_graph_cbcb <- mc3_graph_cbcb %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+```
+
+The network graph showing the relationship between Company and Beneficial Owner is plotted.
+
+```{r}
+set.seed(1234)
+ggraph(mc3_graph_cbcb, 
+            layout = "stress") +
+  geom_edge_link(aes(colour = importance), 
+                 alpha=0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness_centrality, colour = factor(group1))) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("<span style='font-size: 15pt;'>Betweenness Centrality Network (Company-Beneficial Owner)</font>") +
+  theme(plot.title = element_markdown())
+
+kable(head(mc3_graph_cbcb %>%
+             activate("nodes") %>%
+             as_tibble(), 5))
+```
+
+::: callout-Insights
+The following configurations should be noted before we interpret the graphs:
+
+-   Node size is set to betweenness centrality
+
+-   Node colour is set to community group
+
+-   Edge width is set to number of companies
+
+-   Edge colour is set to centrality_edge_betweenness
+
+It is observed that the top 5 ids with highest betweenness centrality are:
+
+-   Senegal Coast Ltd. Liability Co
+
+-   Jessica Brown
+
+-   Ocean Observers Marine mist
+
+-   BlueTide GmbH & Co. KG
+
+-   David Thomas
+
+This means that the above companies/beneficial owners have higher control over the network. However, from the data table, there is no info on the type of services that Senegal Coast Ltd. Liability Co provides while the other 2 companies are not related to fishing activities. Ocean Observers Marine mist is into transportation while BlueTide GmbH & Co. KG is into fabrication and metal products. Following down the list, we observed that only Congo Rapids Ltd. Corporation is related to fishing activities.
+
+It is also observed that although John Smith owns the most number of companies, he does not have as high betweenness centrality i.e. control over the network as compared to other owners who own fewer companies.
+
+The graph did not reflect all the links e.g. although John Smith owns the most companies, this graph only shows 2. This could be due to companies with betweenness \<= 500000 being removed before plotting the graph.
+:::
+
+In the next step, we plot the interactive graph using VisNetwork to better visualize who are the beneficial owners of the non-fishing companies.
+
+### 4.3.3 Analysis of betweenness centrality between Company and Beneficial Owner (VisNetwork)
+
+```{r}
+edges_cbcb_df <- mc3_graph_cbcb %>%
+  activate(edges) %>%
+  as_tibble()
+
+nodes_cbcb_df <- mc3_graph_cbcb %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  rename(label = id) %>%
+  mutate(id=row_number()) %>%
+  select(id, label, group)
+```
+
+```{r}
+visNetwork(nodes_cbcb_df,
+           edges_cbcb_df) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(smooth = list(enabled = TRUE, 
+                         type = "curvedCW")) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+::: callout-Insights
+The different colour groups represent the different range of betweenness centrality with blue having the highest range, which Senegal Coast Ltd. Liability Co fall into.
+
+As earlier mentioned, the graph did not reflect all the links. This could be due to companies with betweenness \<= 500000 being removed before plotting the graph.
+
+Senegal Coast Ltd. Liability Co has the highest betweenness centrality. We extract the company from the edges table and found that it is owned by `22` people, although the graph only showed 4 links. The other 18 people should have betweenness centrality \<=500000 and therefore were not shown. We only know it is from Oceanus, but there is no info on its revenue_omu and product services. As such, no findings can be drawn. But this company is highly suspicious as it does not make sense for it to have so many owners.
+
+```{r}
+mc3_edges_cb %>%
+  filter(source == "Senegal Coast  Ltd. Liability Co")
+```
+
+```{r}
+mc3_nodes_cb %>%
+  filter(id == "Senegal Coast  Ltd. Liability Co")
+```
+
+Jessica Brown is the 2nd highest in betweenness centrality and she owns 5 companies as we can see from the table below.
+
+```{r}
+mc3_edges_cb %>%
+  filter(target == "Jessica Brown")
+```
+
+We extract the company info and observed that only Mar del Oeste - is related to fishing activities. The other 4 companies have either no info or are doing other businesses (metal/wood and veneer). Mar del Oeste -has much higher revenue_omu as compared to the other 4 companies.
+
+```{r}
+mc3_nodes_cb %>%
+  filter(id %in% c("Bauer-Taylor", "BlueTide GmbH & Co. KG", "Mar del Oeste -", "Mcintyre-White", "West Fish  GmbH Transport"))
+```
+
+The 3rd highest in betweenness centrality is Ocean Observers Marine mist which is owned by `24` people. It is in transportation business with revenue_omu of 39678.54. This company is also highly suspicious as it does not make sense for it to have so many owners and the revenue_omu is not high too.
+
+```{r}
+mc3_edges_cb %>%
+  filter(source == "Ocean Observers Marine mist")
+```
+
+```{r}
+mc3_nodes_cb %>%
+  filter(id == "Ocean Observers Marine mist")
+```
+
+The 4th highest in betweenness centrality is BlueTide GmbH & Co. KG which is owned by `48` people. It is in fabrication and metal products business with revenue_omu of 24730.5. This company is highly suspicious too as it does not make sense for it to have so many owners and the revenue_omu is low.
+
+```{r}
+mc3_edges_cb %>%
+  filter(source == "BlueTide GmbH & Co. KG")
+```
+
+```{r}
+mc3_nodes_cb %>%
+  filter(id == "BlueTide GmbH & Co. KG")
+```
+
+The 5th highest in betweenness centrality is David Thomas and he owns 6 companies as we can see from the table below.
+
+```{r}
+mc3_edges_cb %>%
+  filter(target == "David Thomas")
+```
+
+We extract the company info and observed that only Nagaland Sea Catch Ltd. Liability Co Logistics is related to fishing activities. The other 5 companies have either no info or are doing other businesses.
+
+```{r}
+mc3_nodes_cb %>%
+  filter(id %in% c("Bauer-Taylor", "BlueTide GmbH & Co. KG", "Nagaland Sea Catch Ltd. Liability Co Logistics", "Ocean Quest S.A. de C.V.", "Rubio-Evans", "Marine Muse Pic Marine ecology", "Andhra Pradesh Limited Liability Company Ray"))
+```
+:::
+
+## 4.4 Visualization of distribution of Company vs Company Contacts
+
+We want to check the frequency distribution of Company vs Company Contacts.
+
+First, select edges where source type = Company and target type = Company Contacts. Count number of duplicated target i.e. Company Contacts to find out how many companies are linked to each contact. Then plot the distribution.
+
+```{r}
+mc3_edges_cc <- mc3_edges_cleaned %>%
+  filter(type == "Company Contacts") %>%
+    add_count(target) #This adds a column (n) to the table indicating the number of companies linked to the Company Contact. 
+
+ggplot(data = mc3_edges_cc,
+       aes(x = n)) +
+  geom_bar() +
+  labs(title = "Distribution of Number of Companies linked to Company Contacts", x = "Number of Companies Linked", y = "Number of Company Contacts")
+
+kable(head(mc3_edges_cc %>%
+        arrange(desc(n)) %>%
+  as_tibble(), 10))
+```
+
+::: callout-Insights
+It is observed that majority of the Company Contacts are associated with only 1 company, which is normal. However, a minority of them are associated with 4 or more companies. For example, Angela Wood is associated with 7 companies. This is rather suspicious and should be investigated further.
+:::
+
+We also want to find out which company has the most number of contacts.
+
+```{r}
+mc3_edges_cc1 <- mc3_edges_cleaned %>%
+  filter(type == "Company Contacts") %>%
+    add_count(source) #This adds a column (n) to the table indicating the number of contacts linked to the company. 
+
+ggplot(data = mc3_edges_cc1,
+       aes(x = n)) +
+  geom_bar() +
+  labs(title = "Distribution of Number of Company Contacts", x = "Number of Company Contacts", y = "Number of Companies")
+
+kable(head(mc3_edges_cc1 %>%
+        arrange(desc(n)) %>%
+  as_tibble(), 15))
+```
+::: callout-Insights
+It is observed that majority of the companies are associated with only 1 Company Contact. However, a minority of them are associated with 4 or more contacts For example, Aqua Aura SE Marine life has 11 contacts This is rather suspicious and should be investigated further.
+:::
+
+## 4.5 Visualization of relationship between Company and Company Contacts using network graph
+
+### 4.5.1 Analysis of Company Contacts associated with more than 3 companies
+
+First, we form new nodes data table by using source and target of the edges data table. This is to ensure that the nodes in nodes data tables include all the source and target values. Group_component \<10 is used to identify the prominent communities.
+
+```{r}
+mc3_edges_cc4 <- mc3_edges_cc %>%
+  filter(n>3)
+
+id9 <- mc3_edges_cc4 %>%
+  select(source) %>%
+  rename(id = source)
+id10 <- mc3_edges_cc4 %>%
+  select(target) %>%
+  rename(id = target)
+mc3_nodes_cc4 <- rbind(id9, id10) %>%
+  distinct() %>%
+  left_join(mc3_nodes_cleaned, by=c("id" = "id"),
+            unmatched = "drop") %>%
+  filter(type %in% c("Company", "Company Contacts"))
+
+mc3_graph_cc4 <- tbl_graph(nodes = mc3_nodes_cc4,
+                       edges = mc3_edges_cc4,
+                       directed = FALSE) 
+
+mc3_graph_cc4 <- mc3_graph_cc4 %>%
+  activate("nodes") %>%
+  mutate(group = group_components()) %>%
+  filter(group < 10) 
+
+edges_cc4_df <- mc3_graph_cc4 %>%
+  activate(edges) %>%
+  as_tibble()
+
+nodes_cc4_df <- mc3_graph_cc4 %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  rename(label = id) %>%
+  mutate(id=row_number()) %>%
+  select(id, label, group)
+```
+
+```{r}
+visNetwork(nodes_cc4_df,
+           edges_cc4_df) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(smooth = list(enabled = TRUE, 
+                         type = "curvedCW")) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+::: callout-Insights
+From the above graph, we can see that Angela Wood has contacts with 7 companies. We extract info of the companies associated with Angela Wood and cannot find any info on revenue_omu nor product services other than the info that Náutica del Sol Ges.m.b.H. is involved in industrial adhesives business.
+
+```{r}
+mc3_nodes_cc4 %>%
+  filter(id %in% c("Náutica del Sol Ges.m.b.H.", "Náutica del Mar S.A. de C.V. Carriers", "Costa del Sol Carriers", "Ancla de Oro United Yacht", "Playa de Oro Company", "Sparrmans  Swordfish Ges.m.b.H. Merchants", "Gulf of Guinea   Oceanography"))
+```
+
+The 2nd person withe most company association (6) is Jason Carillo. We extract info of the companies associated with him and cannot find any insights as there is no info on revenue_omu and product services.
+
+```{r}
+mc3_nodes_cc4 %>%
+  filter(id %in% c("PacificPlates S.A. de C.V.", "Baltic Sprat Ges.m.b.H. Enterprises", "Rufiji Delta  Limited Liability Company", "jīn qiāng yú AG", "Aqua Adventures Ltd. Corporation", "Náutica del Mar GmbH & Co. KG"))
+```
+
+Jennifer Johnson is one of those with the 3rd highest company association (5). We extract info of the companies associated with her and could only find that House Inc is in glass and packaging business with a relatively high revenue_omu of 157513.702 while Tshikwea S.A. de C.V. is in stationery business with revenue_omu of 25221.835. There is no info on the other 3 companies.
+
+```{r}
+mc3_nodes_cc4 %>%
+  filter(id %in% c("House Inc", "Mar del Golfo Incorporated", "Rodriguez and Sons", "Silva-Cabrera", "Tshikwea S.A. de C.V."))
+```
+:::
+
+### 4.5.2 Analysis of relationship between Company and Company Contacts (tidygraph)
+
+First, we form new nodes data table by using source and target of the edges data table. This is to ensure that the nodes in nodes data tables include all the source and target values.
+
+```{r}
+id11 <- mc3_edges_cc %>%
+  select(source) %>%
+  rename(id = source)
+id12 <- mc3_edges_cc %>%
+  select(target) %>%
+  rename(id = target)
+mc3_nodes_cc <- rbind(id11, id12) %>%
+  distinct() %>%
+  left_join(mc3_nodes_cleaned, by=c("id" = "id"),
+            unmatched = "drop") %>%
+  filter(type %in% c("Company", "Company Contacts"))
+
+mc3_graph_cc <- tbl_graph(nodes = mc3_nodes_cc,
+                       edges = mc3_edges_cc,
+                       directed = FALSE) %>%
+  mutate(betweenness_centrality = centrality_betweenness(),
+         closeness_centrality = centrality_closeness())
+```
+
+Due to the large data size, we filter data with betweenness centrality \> 0 and community group \< 10. Group_component is used to identify the prominent communities.
+
+```{r}
+mc3_graph_cccb <- mc3_graph_cc %>%
+  activate("nodes") %>%
+  arrange(desc(betweenness_centrality)) %>%
+  filter(betweenness_centrality > 0) %>%
+  mutate(group1 = group_components()) %>%
+  filter(group1 < 10) 
+
+mc3_graph_cccb <- mc3_graph_cccb %>%
+  activate("edges") %>%
+  mutate(importance = centrality_edge_betweenness()) 
+```
+
+The network graph showing the relationship between Company and Company Contacts is plotted.
+
+```{r}
+set.seed(1234)
+ggraph(mc3_graph_cccb, 
+            layout = "fr") +
+  geom_edge_link(aes(colour = importance), 
+                 alpha=0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(size = betweenness_centrality, colour = factor(group1))) + 
+  theme_graph() +
+  geom_node_text(aes(label = id), size = 1, repel=TRUE) +
+  ggtitle("<span style='font-size: 14pt;'>Betweenness Centrality Network (Company-Company Contacts)</font>") +
+  theme(plot.title = element_markdown())
+
+kable(head(mc3_graph_cccb %>%
+             activate("nodes") %>%
+             as_tibble(), 5))
+```
+
+::: callout-Insights
+The following configurations should be noted before we interpret the graphs:
+
+-   Node size is set to betweenness centrality
+
+-   Node colour is set to community group
+
+-   Edge width is set to number of companies linked to the Company Contact
+
+-   Edge colour is set to centrality_edge_betweenness
+
+It is observed that the top 5 ids with highest betweenness centrality are:
+
+-   Aqua Aura SE Marine life
+
+-   Irish Mackerel S.A. de C.V. Marine biology
+
+-   Jillian White
+
+-   Leah Cruz
+
+-   Mar del Norte NV
+
+This means that the above companies/Company Contacts have higher control over the network. Aqua Aura SE Marine life has the highest betweenness centrality, which is consistent with the earlier finding that it has the most contacts (11). However, there is no info on its revenue_omu to aid the analysis. Both Aqua Aura SE Marine life and Mar del Norte NV are in fishing business while Irish Mackerel S.A. de C.V. Marine biology may possibly be in the fishing business too as the product services description mentioned fresh, frozen, meats.
+
+```{r}
+mc3_nodes_cc %>%
+  filter(id %in% c("Aqua Aura SE Marine life", "Irish Mackerel S.A. de C.V. Marine biology", "Mar del Norte NV"))
+```
+
+It is also observed that although Angela Wood is associated with the most number of companies, she does not have as high betweenness centrality i.e. control over the network as compared to other contacts who are associated with fewer companies.
+:::
+
+# **5. Conclusion**
+
+In conclusion, majority of the Beneficial Owners own only 1 company, which is normal. However, a minority of them own more than 4 companies, which is suspicious. For example, John Smith owns the most number of companies (11). We can only ascertain that one of the companies (Adams Group) is related to fishing activities. Beachcombers Nautical Plc Carriers is into products, mail, houses activities and it has an exceptionally high revenue_omu of 9891666.673. There is no info for the rest of the companies.
+
+It is also observed that majority of the Company Contacts are associated with only 1 company, which is normal. However, a minority of them are associated with 4 or more companies, which is rather suspicious. For example, Angela Wood has contacts with the most number of companies (7). However, there is no info on revenue_omu nor product services for all the 7 companies other than the info that Náutica del Sol Ges.m.b.H. is involved in industrial adhesives business. It is also suspicious that Aqua Aura SE Marine life has so many Company Contacts (11).
