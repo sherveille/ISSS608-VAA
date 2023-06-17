@@ -542,8 +542,6 @@ The following configurations should be noted before we interpret the graphs:
 
 -   Node colour is set to community group
 
--   Edge width is set to number of companies
-
 -   Edge colour is set to centrality_edge_betweenness
 
 It is observed that the top 5 ids with highest betweenness centrality are:
@@ -699,7 +697,7 @@ mc3_edges_cc1 <- mc3_edges_cleaned %>%
 ggplot(data = mc3_edges_cc1,
        aes(x = n)) +
   geom_bar() +
-  labs(title = "Distribution of Number of Company Contacts", x = "Number of Company Contacts", y = "Number of Companies")
+  labs(title = "Distribution of Number of Company Contacts Linked to Company", x = "Number of Company Contacts", y = "Number of Companies")
 
 kable(head(mc3_edges_cc1 %>%
         arrange(desc(n)) %>%
@@ -852,8 +850,6 @@ The following configurations should be noted before we interpret the graphs:
 -   Node size is set to betweenness centrality
 
 -   Node colour is set to community group
-
--   Edge width is set to number of companies linked to the Company Contact
 
 -   Edge colour is set to centrality_edge_betweenness
 
